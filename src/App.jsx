@@ -1428,7 +1428,7 @@ export default function BPJSSimulatorApp() {
                 <Card className="p-0">
                     <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
                         <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                             Simulasi Saat Terjadi Risiko
+                             {riskScenario === 'contribution' ? 'Simulasi Iuran' : 'Simulasi Saat Terjadi Risiko'}
                         </h3>
                         <Badge>{tenure} Tahun Bekerja</Badge>
                     </div>
