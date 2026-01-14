@@ -4,5 +4,5 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: "/bpjs-simulator/", // <--- TAMBAHKAN BARIS INI (Wajib ada garis miring di awal & akhir)
+  base: "/", // <--- TAMBAHKAN BARIS INI (Wajib ada garis miring di awal & akhir)
 })
