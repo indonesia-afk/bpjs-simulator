@@ -82,6 +82,82 @@ const calculateCompoundSavings = (monthlyContribution, totalMonths, annualRate) 
   return futureValue;
 };
 
+// Helper for JAKON Progressive Calculation (PP 44/2015 - Corrected Logic)
+// Logic: Base from previous tier + (Rate * (ContractValue - PreviousTierLimit))
+const calculateJakonIuran = (contractValue) => {
+  let jkkTotal = 0;
+  let jkmTotal = 0;
+  let breakdown = [];
+
+  // Tiers definition based on user provided regulation text
+  // Tier 1: 0 - 100jt (0.21%, 0.03%)
+  // Tier 2: 100jt - 500jt (+0.17% of diff, +0.02% of diff)
+  // Tier 3: 500jt - 1M (+0.13% of diff, +0.02% of diff)
+  // Tier 4: 1M - 5M (+0.11% of diff, +0.01% of diff)
+  // Tier 5: >5M (+0.09% of diff, +0.01% of diff)
+
+  // Tier 1 Calculation
+  let tier1Limit = 100000000;
+  let valTier1 = Math.min(contractValue, tier1Limit);
+  let jkk1 = valTier1 * 0.0021;
+  let jkm1 = valTier1 * 0.0003;
+  
+  jkkTotal += jkk1;
+  jkmTotal += jkm1;
+  if (valTier1 > 0) {
+      breakdown.push({ tier: "s.d 100 Juta", jkk: jkk1, jkm: jkm1 });
+  }
+
+  // Tier 2 Calculation
+  if (contractValue > tier1Limit) {
+      let tier2Limit = 500000000;
+      let valTier2 = Math.min(contractValue, tier2Limit) - tier1Limit;
+      let jkk2 = valTier2 * 0.0017;
+      let jkm2 = valTier2 * 0.0002;
+      
+      jkkTotal += jkk2;
+      jkmTotal += jkm2;
+      if (valTier2 > 0) breakdown.push({ tier: "> 100 Juta s.d 500 Juta", jkk: jkk2, jkm: jkm2 });
+  }
+
+  // Tier 3 Calculation
+  if (contractValue > 500000000) {
+      let tier3Limit = 1000000000;
+      let valTier3 = Math.min(contractValue, tier3Limit) - 500000000;
+      let jkk3 = valTier3 * 0.0013;
+      let jkm3 = valTier3 * 0.0002;
+
+      jkkTotal += jkk3;
+      jkmTotal += jkm3;
+      if (valTier3 > 0) breakdown.push({ tier: "> 500 Juta s.d 1 Miliar", jkk: jkk3, jkm: jkm3 });
+  }
+
+  // Tier 4 Calculation
+  if (contractValue > 1000000000) {
+      let tier4Limit = 5000000000;
+      let valTier4 = Math.min(contractValue, tier4Limit) - 1000000000;
+      let jkk4 = valTier4 * 0.0011;
+      let jkm4 = valTier4 * 0.0001;
+
+      jkkTotal += jkk4;
+      jkmTotal += jkm4;
+      if (valTier4 > 0) breakdown.push({ tier: "> 1 Miliar s.d 5 Miliar", jkk: jkk4, jkm: jkm4 });
+  }
+
+  // Tier 5 Calculation
+  if (contractValue > 5000000000) {
+      let valTier5 = contractValue - 5000000000;
+      let jkk5 = valTier5 * 0.0009;
+      let jkm5 = valTier5 * 0.0001;
+
+      jkkTotal += jkk5;
+      jkmTotal += jkm5;
+      if (valTier5 > 0) breakdown.push({ tier: "> 5 Miliar", jkk: jkk5, jkm: jkm5 });
+  }
+
+  return { totalJkk: jkkTotal, totalJkm: jkmTotal, breakdown };
+};
+
 // --- COMPONENTS ---
 
 const Card = ({ children, className = "" }) => (
@@ -151,6 +227,10 @@ export default function BPJSSimulatorApp() {
   const [bpuIncome, setBpuIncome] = useState(1000000);
   const [bpuJhtEnabled, setBpuJhtEnabled] = useState(true); 
 
+  // Input States - JAKON
+  const [jakonValue, setJakonValue] = useState(100000000);
+  const [jakonWage, setJakonWage] = useState(3000000); // NEW: Base wage for benefit calc
+
   // Input States - PMI
   const [pmiPackageIndex, setPmiPackageIndex] = useState(0);
   const [pmiJhtEnabled, setPmiJhtEnabled] = useState(false); 
@@ -160,7 +240,6 @@ export default function BPJSSimulatorApp() {
   const [tenureMonths, setTenureMonths] = useState(60); // Tenure in Months (Default 5 Years)
   const [annualYield, setAnnualYield] = useState(5.5); 
   const [jkkRiskIndex, setJkkRiskIndex] = useState(0);
-  const [jakonValue, setJakonValue] = useState(100000000); 
   const [scholarshipKids, setScholarshipKids] = useState(2); 
 
   // UI State
@@ -193,7 +272,7 @@ export default function BPJSSimulatorApp() {
 
   useEffect(() => {
     calculate();
-  }, [segment, baseSalary, fixedAllowance, bpuIncome, bpuJhtEnabled, pmiIncome, pmiJhtEnabled, tenureMonths, annualYield, jkkRiskIndex, jakonValue, pmiPackageIndex, scholarshipKids, jpMaxWage]);
+  }, [segment, baseSalary, fixedAllowance, bpuIncome, bpuJhtEnabled, pmiIncome, pmiJhtEnabled, tenureMonths, annualYield, jkkRiskIndex, jakonValue, jakonWage, pmiPackageIndex, scholarshipKids, jpMaxWage]);
 
   const calculate = () => {
     let res = {
@@ -201,14 +280,16 @@ export default function BPJSSimulatorApp() {
       scenarios: {}
     };
 
-    // Determine current effective income based on segment
-    let currentIncome = 0;
+    // Determine current effective income based on segment used for BENEFIT calculations
+    let benefitBaseIncome = 0;
     if (segment === 'PU') {
-        currentIncome = baseSalary + fixedAllowance;
+        benefitBaseIncome = baseSalary + fixedAllowance;
     } else if (segment === 'BPU') {
-        currentIncome = bpuIncome;
-    } else if (segment === 'PMI' && pmiJhtEnabled) {
-        currentIncome = pmiIncome; 
+        benefitBaseIncome = bpuIncome;
+    } else if (segment === 'PMI') {
+        benefitBaseIncome = pmiJhtEnabled ? pmiIncome : pmiIncome; // If JHT enabled uses input, else fallback (though PMI usually fixed packages)
+    } else if (segment === 'JAKON') {
+        benefitBaseIncome = jakonWage; // NEW: Use the average wage input for benefits
     }
 
     // --- 1. HITUNG IURAN ---
@@ -216,16 +297,17 @@ export default function BPJSSimulatorApp() {
     let monthlyJpTotal = 0;
     let totalPmiAccumulatedCost = 0;
     let pmiCalculationDetails = "";
+    let jakonBreakdown = [];
     
     if (segment === 'PU') {
       let jkkRate = JKK_RISK_RATES[jkkRiskIndex].rate;
-      const jkkNominal = currentIncome * jkkRate;
-      const jkmNominal = currentIncome * 0.003;
-      const jhtEmp = currentIncome * 0.037;
-      const jhtWkr = currentIncome * 0.02;
+      const jkkNominal = benefitBaseIncome * jkkRate;
+      const jkmNominal = benefitBaseIncome * 0.003;
+      const jhtEmp = benefitBaseIncome * 0.037;
+      const jhtWkr = benefitBaseIncome * 0.02;
       monthlyJhtTotal = jhtEmp + jhtWkr;
 
-      const jpBase = Math.min(currentIncome, jpMaxWage); // Use Dynamic JP Cap
+      const jpBase = Math.min(benefitBaseIncome, jpMaxWage); // Use Dynamic JP Cap
       const jpEmp = jpBase * 0.02;
       const jpWkr = jpBase * 0.01;
       monthlyJpTotal = jpEmp + jpWkr;
@@ -238,13 +320,13 @@ export default function BPJSSimulatorApp() {
               name: 'JKK (Kecelakaan Kerja)', 
               split: `Ditanggung Perusahaan Full (${(jkkRate*100).toFixed(2)}%)`,
               amount: jkkNominal, 
-              formula: `Perusahaan: ${formatIDR(currentIncome)} x ${(jkkRate*100).toFixed(2)}%` 
+              formula: `Perusahaan: ${formatIDR(benefitBaseIncome)} x ${(jkkRate*100).toFixed(2)}%` 
             },
             { 
               name: 'JKM (Kematian)', 
               split: 'Ditanggung Perusahaan Full (0.3%)',
               amount: jkmNominal, 
-              formula: `Perusahaan: ${formatIDR(currentIncome)} x 0.3%` 
+              formula: `Perusahaan: ${formatIDR(benefitBaseIncome)} x 0.3%` 
             },
             { 
               name: 'JHT (Hari Tua) - Total 5.7%', 
@@ -256,7 +338,7 @@ export default function BPJSSimulatorApp() {
               name: 'JP (Pensiun) - Total 3%', 
               split: '2% Perusahaan, 1% Pekerja',
               amount: monthlyJpTotal, 
-              formula: `Pekerja: ${formatIDR(jpWkr)} (1%) + Perusahaan: ${formatIDR(jpEmp)} (2%) ${currentIncome > jpMaxWage ? '(Capped)' : ''}` 
+              formula: `Pekerja: ${formatIDR(jpWkr)} (1%) + Perusahaan: ${formatIDR(jpEmp)} (2%) ${benefitBaseIncome > jpMaxWage ? '(Capped)' : ''}` 
             },
             { 
               name: 'JKP (Subsidi)', 
@@ -267,19 +349,19 @@ export default function BPJSSimulatorApp() {
         ]
       };
     } else if (segment === 'BPU') {
-      const jkkNominal = Math.max(currentIncome * 0.01, 10000); 
+      const jkkNominal = Math.max(benefitBaseIncome * 0.01, 10000); 
       const jkmNominal = 6800; 
       
       let jhtNominal = 0;
       let details = [
-         { name: 'JKK (Kecelakaan Kerja)', split: 'Mandiri 1%', amount: jkkNominal, formula: `${formatIDR(currentIncome)} x 1% (Min Rp 10.000)` },
+         { name: 'JKK (Kecelakaan Kerja)', split: 'Mandiri 1%', amount: jkkNominal, formula: `${formatIDR(benefitBaseIncome)} x 1% (Min Rp 10.000)` },
          { name: 'JKM (Kematian)', split: 'Mandiri Flat', amount: jkmNominal, formula: 'Tarif Tetap (Flat) Rp 6.800' },
       ];
 
       // BPU JHT Logic based on Checkbox
       if (bpuJhtEnabled) {
-          jhtNominal = currentIncome * 0.02; 
-          details.push({ name: 'JHT (Hari Tua)', split: 'Mandiri 2%', amount: jhtNominal, formula: `${formatIDR(currentIncome)} x 2% (Sukarela)` });
+          jhtNominal = benefitBaseIncome * 0.02; 
+          details.push({ name: 'JHT (Hari Tua)', split: 'Mandiri 2%', amount: jhtNominal, formula: `${formatIDR(benefitBaseIncome)} x 2% (Sukarela)` });
       }
 
       monthlyJhtTotal = jhtNominal;
@@ -289,16 +371,21 @@ export default function BPJSSimulatorApp() {
         details: details
       };
     } else if (segment === 'JAKON') {
-        const jkkNominal = jakonValue * 0.0021;
-        const jkmNominal = jakonValue * 0.0003;
+        // NEW: Progressive Calculation for JAKON
+        const jakonCalc = calculateJakonIuran(jakonValue);
+        const jkkNominal = jakonCalc.totalJkk;
+        const jkmNominal = jakonCalc.totalJkm;
         const total = jkkNominal + jkmNominal;
+        jakonBreakdown = jakonCalc.breakdown;
+
         res.monthly = {
             companyPay: total,
             workerPay: 0,
             details: [
-                { name: 'JKK Konstruksi', split: 'Kontraktor 0.21%', amount: jkkNominal, formula: `${formatIDR(jakonValue)} x 0.21%` },
-                { name: 'JKM Konstruksi', split: 'Kontraktor 0.03%', amount: jkmNominal, formula: `${formatIDR(jakonValue)} x 0.03%` },
-            ]
+                { name: 'JKK Konstruksi (Progresif)', split: 'Kontraktor (Berjenjang)', amount: jkkNominal, formula: 'Sesuai jenjang nilai kontrak (PP 44/2015)' },
+                { name: 'JKM Konstruksi (Progresif)', split: 'Kontraktor (Berjenjang)', amount: jkmNominal, formula: 'Sesuai jenjang nilai kontrak (PP 44/2015)' },
+            ],
+            jakonBreakdown: jakonBreakdown // Pass detailed breakdown
         };
     } else if (segment === 'PMI') {
         const pkg = PMI_PACKAGES[pmiPackageIndex];
@@ -329,13 +416,13 @@ export default function BPJSSimulatorApp() {
         }];
 
         if (pmiJhtEnabled) {
-            jhtNominal = currentIncome * 0.02; 
+            jhtNominal = benefitBaseIncome * 0.02; 
             monthlyJhtTotal = jhtNominal;
             details.push({
                 name: 'JHT (Sukarela)',
                 split: 'Mandiri (2%)',
                 amount: jhtNominal,
-                formula: `${formatIDR(currentIncome)} x 2%`
+                formula: `${formatIDR(benefitBaseIncome)} x 2%`
             });
         }
 
@@ -453,7 +540,7 @@ export default function BPJSSimulatorApp() {
     );
 
     // F. JKK DETAILS
-    const jkkDeathComp = 48 * currentIncome;
+    const jkkDeathComp = 48 * benefitBaseIncome; // Benefit based on Wage, not project value
     const jkkFuneral = 10000000;
     const jkkBerkala = 12000000;
     // JKK Scholarship NO Minimum Tenure
@@ -520,7 +607,7 @@ export default function BPJSSimulatorApp() {
 
     // Skenario C: Sakit/Kecelakaan Kerja
     res.scenarios.sick = {
-        stmb1: currentIncome, 
+        stmb1: benefitBaseIncome, // Benefit based on Wage 
         stmbDetails: sickDetails,
         medical: "Unlimited (Sesuai Medis)",
         transport: 5000000, 
@@ -530,7 +617,7 @@ export default function BPJSSimulatorApp() {
 
     // Skenario D: PHK (JKP)
     const jkpEligible = tenureMonths >= 12; // Min 12 Months
-    const jkpWageBase = Math.min(currentIncome, JKP_WAGE_CAP);
+    const jkpWageBase = Math.min(benefitBaseIncome, JKP_WAGE_CAP);
     const jkpTotalCash = (jkpEligible && segment === 'PU') ? (jkpWageBase * 0.6 * 6) : 0;
     const jkpDetailsContent = jkpEligible ? (
          <div className="space-y-1">
@@ -556,7 +643,7 @@ export default function BPJSSimulatorApp() {
     res.scenarios.retire = {
         jhtBalance: jhtBalance,
         jhtDetails: jhtDetailsContent,
-        jpMonthly: (segment === 'PU' && tenureYears >= 15) ? (0.01 * tenureYears * Math.min(currentIncome, jpMaxWage)) : 0,
+        jpMonthly: (segment === 'PU' && tenureYears >= 15) ? (0.01 * tenureYears * Math.min(benefitBaseIncome, jpMaxWage)) : 0,
         jpMonthlyDetails: jpMonthlyDetails,
         jpLumpsum: (segment === 'PU' && tenureYears < 15) ? jpBalance : 0,
         jpLumpSumDetails: jpLumpSumDetails,
@@ -653,6 +740,27 @@ export default function BPJSSimulatorApp() {
                             )}
                         </div>
                     ))}
+
+                    {/* NEW: JAKON Breakdown */}
+                    {segment === 'JAKON' && results.monthly.jakonBreakdown && (
+                        <div className="mt-4 pt-4 border-t border-gray-200">
+                            <h4 className="font-bold text-gray-800 text-sm mb-2">Rincian Perhitungan Berjenjang</h4>
+                            <div className="space-y-1 bg-gray-50 p-2 rounded text-xs">
+                                <div className="grid grid-cols-4 font-semibold text-gray-500 mb-1 border-b pb-1">
+                                    <span className="col-span-2">Jenjang Nilai</span>
+                                    <span className="text-right">Iuran JKK</span>
+                                    <span className="text-right">Iuran JKM</span>
+                                </div>
+                                {results.monthly.jakonBreakdown.map((item, idx) => (
+                                    <div key={idx} className="grid grid-cols-4 text-gray-600 py-1 border-b last:border-0 border-gray-100">
+                                        <span className="col-span-2">{item.tier}</span>
+                                        <span className="text-right">{formatIDR(item.jkk)}</span>
+                                        <span className="text-right">{formatIDR(item.jkm)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     {/* NEW: Total Tenure Cost Breakdown */}
                     {segment !== 'JAKON' && (
@@ -1389,6 +1497,22 @@ export default function BPJSSimulatorApp() {
                             </div>
                         </div>
 
+                        {/* NEW INPUT: JAKON WAGE */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-600 mb-1">(Jika Ada) Upah Rata-rata Pekerja JAKON (Harian Lepas/Borongan) Untuk Menghitung Santunan JKK Meninggal</label>
+                            <div className="relative">
+                            <span className="absolute left-3 top-3 text-gray-400">Rp</span>
+                            <input 
+                                type="number" 
+                                value={jakonWage === 0 ? '' : jakonWage} 
+                                onChange={(e) => setJakonWage(Number(e.target.value))}
+                                className="w-full pl-10 p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                placeholder="0"
+                            />
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">*Digunakan sebagai dasar perhitungan manfaat santunan.</p>
+                        </div>
+
                         {/* ADDED TENURE SLIDER TO JAKON */}
                         <div>
                             <label className="flex justify-between text-sm font-medium text-gray-600 mb-1">
@@ -1565,7 +1689,7 @@ export default function BPJSSimulatorApp() {
         
         {/* Footer */}
         <div className="mt-8 text-center text-gray-400 text-xs pb-4">
-          <p>Perhitungan resmi mengacu pada Peraturan Perundangan terkini.</p>
+          <p>Perhitungan resmi mengacu pada Peraturan Perundang-Undangan.</p>
           <p>Estimasi manfaat uang tunai (JHT/JP) belum termasuk potongan Pajak (PPh 21) sesuai ketentuan berlaku.</p>
 
           {/* Divider */}
