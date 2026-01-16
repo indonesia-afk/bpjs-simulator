@@ -1222,7 +1222,7 @@ export default function BPJSSimulatorApp() {
               Simulator Iuran & Manfaat Program BPJS Ketenagakerjaan
             </h1>
             <p className="text-blue-200 text-xs mt-1">
-              Powered by <a href="https://espeje.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-white transition-colors">espeje.com</a> & <a href="https://link.gr.id" target="_blank" rel="noopener noreferrer" className="underline hover:text-white transition-colors">link.gr.id</a>
+              Powered by <a href="https://espeje.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-white transition-colors">espeje.com</a> & <a href="https://link-gr.id" target="_blank" rel="noopener noreferrer" className="underline hover:text-white transition-colors">link-gr.id</a>
             </p>
           </div>
           <div className="hidden md:flex gap-2 bg-blue-900/30 p-1 rounded-lg">
